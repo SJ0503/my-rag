@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import DATABASE_URL
@@ -31,4 +31,26 @@ def get_db():
         yield db
     finally:
         # 작업이 끝난 후 세션을 닫아 데이터베이스 리소스를 해제합니다.
+        print("Closing database session")
         db.close()
+
+
+# DB 연결 확인용 함수
+# SELECT 1은 데이터를 변경하지 않고 연결 상태만 확인하는 간단한 SQL이다.
+def check_database_connection():
+    try:
+        # with 문이 끝나면 연결이 자동으로 반환된다.
+        with engine.connect() as connection:
+            result = connection.execute(text("SELECT 1")).scalar_one()
+            database_name = connection.execute(text("SELECT DATABASE()")).scalar_one()
+
+        print(f"DB 연결 성공: {database_name}")
+        print(f"SELECT 1 결과: {result}")
+    except Exception as error:
+        print(f"DB 연결 실패: {error}")
+
+
+# 이 파일을 모듈로 직접 실행할 때만 연결 확인 함수를 호출한다.
+# FastAPI에서 app.database를 import할 때는 실행되지 않는다.
+if __name__ == "__main__":
+    check_database_connection()
