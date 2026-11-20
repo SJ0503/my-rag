@@ -56,6 +56,10 @@ def google_login(
 
     # 3. Lenary 자체 Access Token 발급
     access_token = create_access_token(user.user_id)
+    
+    # 4. JWT 발급 확인 (토큰 원문은 출력하지 않음)
+    print("[Backend] 회원 ID:", user.user_id)
+    print("[Backend] JWT 발급 여부:", bool(access_token))
 
     # 4. 로그인 결과 반환
     return {
