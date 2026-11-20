@@ -6,3 +6,11 @@ class RefreshTokenRequest(BaseModel):
 # Google 로그인 요청 데이터
 class GoogleLoginRequest(BaseModel):
     id_token: str
+    
+class AppleLoginRequest(BaseModel):
+    id_token: str
+    nonce: str
+    name: str | None = None
+    
+class KakaoLoginRequest(BaseModel):
+    access_token: str

@@ -20,6 +20,15 @@ from app.services.refresh_service import (
     revoke_refresh_session,
 )
 
+from jwt.exceptions import PyJWKClientError
+
+from app.schemas.auth import AppleLoginRequest
+from app.services.apple_auth import verify_apple_token
+from app.services.auth_service import login_with_social
+
+from app.schemas.auth import KakaoLoginRequest
+from app.services.kakao_auth import verify_kakao_token
+
 # 인증 관련 API Router
 router = APIRouter(
     prefix="/auth",
@@ -81,6 +90,142 @@ def google_login(
             "nickname": user.nickname
         }
     }
+    
+
+@router.post("/apple")
+def apple_login(
+    request: AppleLoginRequest,
+    db: Session = Depends(get_db),
+):
+    # 1. Apple Identity Token 검증
+    try:
+        apple_user = verify_apple_token(
+            request.id_token,
+            request.nonce,
+        )
+
+    except ValueError:
+        raise HTTPException(
+            status_code=401,
+            detail="Apple 인증에 실패했습니다.",
+        )
+
+    except PyJWKClientError:
+        raise HTTPException(
+            status_code=503,
+            detail="Apple 인증 서버에 연결할 수 없습니다.",
+        )
+
+    # 이름은 표시용으로만 사용
+    apple_user["name"] = request.name
+
+    # 2. MySQL 회원 조회 및 생성
+    try:
+        user, is_new_user = login_with_social(
+            db,
+            "apple",
+            apple_user,
+        )
+
+    except LookupError:
+        raise HTTPException(
+            status_code=500,
+            detail="Apple 제공자 설정 오류",
+        )
+
+    except PermissionError:
+        raise HTTPException(
+            status_code=403,
+            detail="사용할 수 없는 계정입니다.",
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="계정 등록 중 중복이 발생했습니다.",
+        )
+
+    # 3. Lenary JWT + Refresh Token 발급
+    tokens = create_session_tokens(
+        db=db,
+        user_id=user.user_id,
+    )
+
+    return {
+        "message": "Apple 로그인 성공",
+        **tokens,
+        "is_new_user": is_new_user,
+        "user": {
+            "user_id": user.user_id,
+            "nickname": user.nickname,
+        },
+    }
+    
+
+@router.post("/kakao")
+def kakao_login(
+    request: KakaoLoginRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        kakao_user = verify_kakao_token(
+            request.access_token
+        )
+
+    except ValueError as e:
+        print("[Kakao 인증 실패]", str(e))
+
+        raise HTTPException(
+        status_code=401,
+        detail="Kakao 인증에 실패했습니다.",
+    )
+
+    except ConnectionError:
+        raise HTTPException(
+            status_code=502,
+            detail="Kakao 인증 서버 요청에 실패했습니다.",
+        )
+
+    try:
+        user, is_new_user = login_with_social(
+            db,
+            "kakao",
+            kakao_user,
+        )
+
+    except LookupError:
+        raise HTTPException(
+            status_code=500,
+            detail="Kakao 제공자 설정 오류",
+        )
+
+    except PermissionError:
+        raise HTTPException(
+            status_code=403,
+            detail="사용할 수 없는 계정입니다.",
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="계정 등록 중 중복이 발생했습니다.",
+        )
+
+    tokens = create_session_tokens(
+        db=db,
+        user_id=user.user_id,
+    )
+
+    return {
+        "message": "Kakao 로그인 성공",
+        **tokens,
+        "is_new_user": is_new_user,
+        "user": {
+            "user_id": user.user_id,
+            "nickname": user.nickname,
+        },
+    }
+
 
 # 현재 로그인한 사용자 정보 조회
 @router.get("/me")
