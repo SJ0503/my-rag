@@ -6,9 +6,19 @@ from app.database import get_db
 from app.schemas.auth import GoogleLoginRequest
 from app.services.google_auth import verify_google_token
 from app.services.auth_service import login_with_google
-from app.services.jwt_service import create_access_token
 from app.dependencies import get_current_user
 from app.models.user import User
+
+from app.schemas.auth import (
+    GoogleLoginRequest,
+    RefreshTokenRequest,
+)
+
+from app.services.refresh_service import (
+    create_session_tokens,
+    rotate_refresh_token,
+    revoke_refresh_session,
+)
 
 # 인증 관련 API Router
 router = APIRouter(
@@ -54,18 +64,17 @@ def google_login(
             detail="소셜 계정 등록 중 중복이 발생했습니다."
         )
 
-    # 3. Lenary 자체 Access Token 발급
-    access_token = create_access_token(user.user_id)
+    # 3. Lenary 자체 토큰 2개 발급
+    tokens = create_session_tokens(db=db, user_id=user.user_id)
     
     # 4. JWT 발급 확인 (토큰 원문은 출력하지 않음)
     print("[Backend] 회원 ID:", user.user_id)
-    print("[Backend] JWT 발급 여부:", bool(access_token))
+    print("[Backend] JWT 발급 여부:", bool(tokens.get("access_token")))
 
     # 4. 로그인 결과 반환
     return {
         "message": "Google 로그인 성공",
-        "access_token": access_token,
-        "token_type": "bearer",
+        **tokens,
         "is_new_user": is_new_user,
         "user": {
             "user_id": user.user_id,
@@ -84,3 +93,36 @@ def get_my_info(
         "role": current_user.role,
         "status": current_user.status
     }
+    
+
+
+@router.post("/refresh")
+def refresh_tokens(
+    request: RefreshTokenRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh Token으로 새 Access/Refresh Token 발급.
+    기존 Refresh Token은 즉시 폐기한다.
+    """
+    return rotate_refresh_token(
+        db=db,
+        raw_token=request.refresh_token,
+    )
+
+
+@router.post("/logout")
+def logout(
+    request: RefreshTokenRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    전달받은 Refresh Token이 속한
+    로그인 세션 전체를 폐기한다.
+    """
+    revoke_refresh_session(
+        db=db,
+        raw_token=request.refresh_token,
+    )
+
+    return {"message": "로그아웃 완료"}

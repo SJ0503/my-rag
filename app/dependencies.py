@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.user import User
 from app.services.jwt_service import verify_access_token
 
+from app.services.refresh_service import is_session_active
 
 # HTTP Authorization 헤더에서 Bearer Token 추출
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -26,7 +27,16 @@ def get_current_user(
 
     # 2. JWT 검증 후 사용자 ID 추출
     try:
-        user_id = verify_access_token(credentials.credentials)
+        user_id, session_id = verify_access_token(
+            credentials.credentials
+        )
+
+        if not is_session_active(db, user_id, session_id):
+            raise HTTPException(
+                status_code=401,
+                detail="세션이 만료되었거나 유효하지 않습니다.",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
 
     except ValueError:
         raise HTTPException(
